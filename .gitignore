@@ -26,6 +26,7 @@ env/
 # 本地数据库与缓存
 *.db
 runs/
+test/
 *.sqlite3
 
 # MacOS 系统文件
