@@ -1,39 +1,73 @@
 import datetime, json
 from typing import Dict, Any, List
 from sqlalchemy import text
-from sqlalchemy.orm import Session
-from poc.db.session import SessionLocal
 from poc.utils.sqlglot_utils import is_read_only, wrap_count_subquery, pretty
 from poc.utils.risk_policy import assess_risk
+from .sql_generator import intent_to_sql
+from poc.intent.schema import FeasibilityIntent
+from poc.db.database import DatabaseManager
+from poc.db.config import settings
 
-# 简单概念标准化（可合并到 intent parser）
-CONCEPT_MAP = {
-    "type 2 diabetes": "type 2 diabetes",
-    "t2dm": "type 2 diabetes",
+
+# OMOP 概念映射：条件名称 -> concept_id
+# 注意：实际项目中应该从 concept 表查询，这里使用硬编码映射
+CONDITION_CONCEPT_MAP = {
+    "type 2 diabetes": 319835,  # 根据用户数据
+    "t2dm": 319835,
+    "diabetes": 319835,
+    "hypertension": 201826,  # 根据用户数据
+}
+
+# 性别映射：字符串 -> concept_id
+GENDER_CONCEPT_MAP = {
+    "M": 8507,  # Male
+    "F": 8532,  # Female
+    "male": 8507,
+    "female": 8532,
 }
 
 def resolve_concepts(intent: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    将条件名称映射到 OMOP concept_id
+    将性别字符串映射到 gender_concept_id
+    """
+    # 映射条件
     cond = intent.get("condition")
     if cond:
-        norm = CONCEPT_MAP.get(cond.lower(), cond)
-        intent["condition"] = norm
+        cond_lower = cond.lower()
+        concept_id = CONDITION_CONCEPT_MAP.get(cond_lower)
+        if concept_id:
+            intent["condition_concept_id"] = concept_id
+        else:
+            # 如果找不到映射，保留原值（可能需要查询 concept 表）
+            intent["condition_concept_id"] = None
+            intent["condition_name"] = cond  # 保留原始名称用于调试
+    
+    # 映射性别
+    if intent.get("demographic_filters") and intent["demographic_filters"].get("gender"):
+        gender = intent["demographic_filters"]["gender"]
+        gender_concept_id = GENDER_CONCEPT_MAP.get(gender.upper() if isinstance(gender, str) else str(gender).upper())
+        if gender_concept_id:
+            intent["demographic_filters"]["gender_concept_id"] = gender_concept_id
+    
     return intent
 
 def generate_sql(intent: Dict[str, Any]) -> str:
-    # 只支持 metric=count 的最小模板
-    condition = intent.get("condition")
-    start = intent.get("time_window_start")
-    end   = intent.get("time_window_end")
-
-    base = "SELECT COUNT(*) AS n FROM condition_occurrence WHERE 1=1"
-    if condition:
-        base += f" AND condition = '{condition}'"
-    if start and end:
-        base += f" AND date BETWEEN '{start}' AND '{end}'"
-    return base
+    """
+    生成 SQL 时重新构造 FeasibilityIntent，这样 intent_to_sql
+    可以使用 .task_type 等属性访问
+    注意：intent 字典可能包含额外的字段（如 condition_concept_id），
+    这些字段需要传递给 SQL 生成器
+    """
+    # 创建 FeasibilityIntent 对象（只包含 schema 定义的字段）
+    intent_obj = FeasibilityIntent(**{k: v for k, v in intent.items() if k in FeasibilityIntent.model_fields})
+    # 将完整的 intent 字典（包含额外字段）传递给 SQL 生成器
+    sql = intent_to_sql(intent_obj, extra_fields=intent)
+    return sql
 
 def run_sql(sql: str) -> List[Dict[str, Any]]:
-    with SessionLocal() as s:
+    db = DatabaseManager(settings.DB_URL, echo=True)
+    with db.session() as s:
         rs = s.execute(text(sql))
         cols = rs.keys()
         rows = rs.fetchall()

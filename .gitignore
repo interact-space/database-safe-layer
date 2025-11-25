@@ -16,7 +16,7 @@ env/
 
 # 环境变量文件
 .env
-.env.*
+# .env.*
 
 # IDE / 编辑器
 .vscode/

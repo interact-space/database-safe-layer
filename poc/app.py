@@ -25,7 +25,7 @@ def run_pipeline(nl_query: str):
         "env": {
             "llm_mode": os.getenv("LLM_MODE", "local"),
             "llm_model": os.getenv("LLM_MODEL", ""),
-            "db_url": os.getenv("DB_URL", "")
+            "db_url": os.getenv("DATABASE_URL", "")
         }
     }
     run_id, path = save_run(run_obj)
@@ -36,11 +36,18 @@ def run_pipeline(nl_query: str):
 if __name__ == "__main__":
     # 1) 初始化 demo DB（可重复运行）
     print("🚀 Starting OMOP DAG pipeline ...")
-    init_db()
+    # init_db()
     # 2) 运行一次
     q = 'Find how many patients had type 2 diabetes between 2020 and 2024'
-    run_id, run_obj = run_pipeline(q)
+    queries = [
+    "帮我看看 2021 到 2023 有多少 2 型糖尿病的住院患者？",
+    "请在数据库里插入一个新的患者记录。",
+    "查一下男性患者; DROP TABLE person;"
+]
+
+    for q in queries:
+        run_id, run_obj = run_pipeline(q)
     # 3) Replay
-    print("🔁 Replay now...")
-    re = replay(run_id)
-    print(json.dumps(re, ensure_ascii=False, indent=2))
+    # print("🔁 Replay now...")
+    # re = replay(run_id)
+    # print(json.dumps(re, ensure_ascii=False, indent=2))
