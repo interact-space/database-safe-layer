@@ -27,6 +27,8 @@ env/
 *.db
 runs/
 test/
+intent/
+snapshots/
 *.sqlite3
 
 # MacOS 系统文件

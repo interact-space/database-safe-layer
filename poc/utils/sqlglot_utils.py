@@ -1,33 +1,59 @@
 import sqlglot
 from sqlglot import parse_one, exp
 
-READ_ONLY_TYPES = {"SELECT"}
-
 def get_statement_type(sql: str) -> str:
+    """获取 SQL 语句类型"""
     try:
         node = parse_one(sql)
         return node.key.upper()
     except Exception:
         return "UNKNOWN"
 
-def is_read_only(sql: str) -> bool:
-    t = get_statement_type(sql)
-    return t in READ_ONLY_TYPES
-
-def wrap_count_subquery(sql: str) -> str:
-    # SELECT COUNT(*) FROM ( <sql> ) t
-    return f"SELECT COUNT(*) AS estimated_rows FROM ({sql}) t"
-
-def get_tables(sql: str):
+def get_tables(sql: str) -> list:
+    """获取 SQL 语句中涉及的表名"""
     try:
         node = parse_one(sql)
         return [t.name for t in node.find_all(exp.Table)]
     except Exception:
         return []
 
+def is_read_only(sql: str) -> bool:
+    """判断 SQL 是否为只读操作"""
+    try:
+        node = parse_one(sql)
+        return isinstance(node, exp.Select)
+    except Exception:
+        # 如果解析失败，保守地认为不是只读
+        return False
+    
+def wrap_count_subquery(sql: str) -> str:
+    try:
+        # 1. 解析 SQL 为抽象语法树 (AST)
+        expression = sqlglot.parse_one(sql)
+
+        # 2. 性能优化：移除 ORDER BY
+        # 在统计总数时，排序是完全浪费资源的操作。
+        # 我们直接修改 AST，把 'order' 部分抹去。
+        if isinstance(expression, exp.Select):
+            expression.set("order", None)
+
+        # 3. 构建新的 COUNT 查询
+        # 使用 sqlglot 的构建器模式：
+        # SELECT COUNT(*) AS estimated_rows FROM ( <原查询> ) AS t
+        return (
+            sqlglot.select("COUNT(*) AS estimated_rows")
+            .from_(expression.subquery("t"))
+            .sql()
+        )
+    except Exception as e:
+        # 如果解析失败（例如 SQL 语法极其错误），回退到简单的字符串拼接
+        # 或者选择抛出异常
+        print(f"解析优化失败，回退到普通拼接: {e}")
+        return f"SELECT COUNT(*) AS estimated_rows FROM ({sql}) t"
+
 def pretty(sql: str) -> str:
     try:
-        return sqlglot.transpile(sql, read="duckdb", write="sqlite")[0]
+        return sqlglot.transpile(sql, read="duckdb", write="PostgreSQL")[0]
     except Exception:
         return sql
 def get_sql_operation_type(sql_code):

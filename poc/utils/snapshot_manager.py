@@ -11,7 +11,7 @@ SNAPSHOTS_LOG = os.path.join(os.getcwd(), "poc", "snapshots", "snapshots_log.jso
 os.makedirs(os.path.dirname(SNAPSHOTS_LOG), exist_ok=True)
 
 
-def create_snapshot_for_operation(operation_type: str, sql: str, user_input: str) -> str:
+def create_snapshot_for_operation(operation_type: str, sql: str) -> str:
     """
     为高风险操作创建快照
     
@@ -29,8 +29,7 @@ def create_snapshot_for_operation(operation_type: str, sql: str, user_input: str
             "snapshot_id": snapshot_id,
             "timestamp": datetime.datetime.utcnow().isoformat(),
             "operation_type": operation_type,
-            "sql_preview": sql[:200] if sql else None,
-            "user_input": user_input
+            "sql_preview": sql[:200] if sql else None
         }
         
         # 读取现有日志
@@ -46,7 +45,7 @@ def create_snapshot_for_operation(operation_type: str, sql: str, user_input: str
         with open(SNAPSHOTS_LOG, "w", encoding="utf-8") as f:
             json.dump(logs, f, ensure_ascii=False, indent=2)
         
-        return snapshot_id
+        return snapshot_meta
         
     except Exception as e:
         print(f"⚠️ Warning: Failed to create snapshot: {str(e)}")
