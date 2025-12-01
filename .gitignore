@@ -29,6 +29,8 @@ runs/
 test/
 intent/
 snapshots/
+/db_safe_layer/snapshots
+create_structure.py
 *.sqlite3
 
 # MacOS 系统文件
@@ -38,3 +40,9 @@ snapshots/
 build/
 dist/
 *.egg-info/
+
+# pip install files
+pyproject.toml
+safe_db_cli.py
+safe_db_rollback_cli.py
+readme_new.md

@@ -2,7 +2,7 @@ import os, json, datetime
 from dotenv import load_dotenv
 load_dotenv()
 
-RUNS_DIR = os.path.join(os.getcwd(), "poc", "runs") if os.getcwd().endswith("poc") else os.path.join(os.getcwd(), "runs")
+RUNS_DIR = os.path.join(os.getcwd(), "db_safe_layer", "runs") if os.getcwd().endswith("db_safe_layer") else os.path.join(os.getcwd(), "runs")
 os.makedirs(RUNS_DIR, exist_ok=True)
 
 def save_run(run_obj: dict) -> str:

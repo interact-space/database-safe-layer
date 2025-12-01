@@ -2,7 +2,7 @@ import sqlglot
 from sqlglot import parse_one, exp
 
 def get_statement_type(sql: str) -> str:
-    """获取 SQL 语句类型"""
+    """Get SQL statement type"""
     try:
         node = parse_one(sql)
         return node.key.upper()
@@ -10,7 +10,7 @@ def get_statement_type(sql: str) -> str:
         return "UNKNOWN"
 
 def get_tables(sql: str) -> list:
-    """获取 SQL 语句中涉及的表名"""
+    """Get the table names involved in the SQL statement"""
     try:
         node = parse_one(sql)
         return [t.name for t in node.find_all(exp.Table)]
@@ -18,27 +18,27 @@ def get_tables(sql: str) -> list:
         return []
 
 def is_read_only(sql: str) -> bool:
-    """判断 SQL 是否为只读操作"""
+    """Determine whether SQL is a read-only operation"""
     try:
         node = parse_one(sql)
         return isinstance(node, exp.Select)
     except Exception:
-        # 如果解析失败，保守地认为不是只读
+        # If parsing fails, it is conservatively considered not read-only.
         return False
     
 def wrap_count_subquery(sql: str) -> str:
     try:
-        # 1. 解析 SQL 为抽象语法树 (AST)
+        #1. Parse SQL into abstract syntax tree (AST)
         expression = sqlglot.parse_one(sql)
 
-        # 2. 性能优化：移除 ORDER BY
-        # 在统计总数时，排序是完全浪费资源的操作。
-        # 我们直接修改 AST，把 'order' 部分抹去。
+        # 2. Performance optimization: remove ORDER BY
+        # When counting totals, sorting is a completely wasteful operation.
+        # We directly modify the AST and delete the 'order' part.
         if isinstance(expression, exp.Select):
             expression.set("order", None)
 
-        # 3. 构建新的 COUNT 查询
-        # 使用 sqlglot 的构建器模式：
+       # 3. Build a new COUNT query
+        # Use sqlglot's builder pattern:
         # SELECT COUNT(*) AS estimated_rows FROM ( <原查询> ) AS t
         return (
             sqlglot.select("COUNT(*) AS estimated_rows")
@@ -46,9 +46,9 @@ def wrap_count_subquery(sql: str) -> str:
             .sql()
         )
     except Exception as e:
-        # 如果解析失败（例如 SQL 语法极其错误），回退到简单的字符串拼接
-        # 或者选择抛出异常
-        print(f"解析优化失败，回退到普通拼接: {e}")
+       # If parsing fails (for example, the SQL syntax is extremely wrong), fall back to simple string concatenation
+        # Or choose to throw an exception
+        print(f"Parsing optimization failed and fell back to normal splicing: {e}")
         return f"SELECT COUNT(*) AS estimated_rows FROM ({sql}) t"
 
 def pretty(sql: str) -> str:
@@ -58,10 +58,10 @@ def pretty(sql: str) -> str:
         return sql
 def get_sql_operation_type(sql_code):
     """
-    解析 SQL 并返回操作类型 (CRUD / DDL) 以及具体的命令
+    Parse SQL and return operation type (CRUD /DDL) and specific command
     """
     try:
-        # parse 可能会返回多条语句的列表，所以我们遍历它
+        # parse may return a list of multiple statements, so we iterate over it
         parsed_expressions = sqlglot.parse(sql_code)
     except Exception as e:
         return [{"sql": sql_code, "type": "ERROR", "detail": str(e)}]
@@ -69,7 +69,7 @@ def get_sql_operation_type(sql_code):
     results = []
 
     for expression in parsed_expressions:
-        # 获取原始 SQL 片段（用于展示）
+        # Get the original SQL fragment (for display)
         raw_sql = expression.sql()
         
         op_category = "UNKNOWN"
@@ -95,7 +95,7 @@ def get_sql_operation_type(sql_code):
         # --- 2. DDL (Data Definition Language) ---
         elif isinstance(expression, exp.Create):
             op_category = "DDL - CREATE"
-            # 进一步判断是创建表、视图还是索引
+            # Further determine whether to create a table, view or index
             kind = expression.args.get("kind", "OBJECT")
             op_detail = f"CREATE {kind.upper()}"
         elif isinstance(expression, exp.Drop):
@@ -109,7 +109,7 @@ def get_sql_operation_type(sql_code):
             op_category = "DDL - TRUNCATE"
             op_detail = "TRUNCATE (Clear Table)"
             
-        # --- 3. 其他 (DCL / TCL) ---
+        # ---3. Others (DCL /TCL) ---
         elif isinstance(expression, exp.Grant) or isinstance(expression, exp.Revoke):
             op_category = "DCL (Permissions)"
             op_detail = "GRANT/REVOKE"
@@ -117,7 +117,7 @@ def get_sql_operation_type(sql_code):
             op_category = "TCL (Transaction)"
             op_detail = "TRANSACTION CONTROL"
 
-        # 提取涉及的主表名（简单的提取逻辑）
+       # Extract the main table name involved (simple extraction logic)
         tables = [t.name for t in expression.find_all(exp.Table)]
         
         results.append({

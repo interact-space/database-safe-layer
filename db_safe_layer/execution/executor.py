@@ -1,127 +1,128 @@
 import datetime, json
 from typing import Dict, Any, List, Optional
 from sqlalchemy import text
-from poc.utils.sqlglot_utils import  wrap_count_subquery, pretty, get_statement_type, get_tables
-from poc.utils.risk_policy import  analyze_risk
-from poc.db.database import DatabaseManager
-from poc.db.config import settings
+from db_safe_layer.utils.sqlglot_helper import extract_sql_details, pretty
+# from db_safe_layer.utils.sqlglot_utils import  wrap_count_subquery, pretty, get_statement_type, get_tables
+from db_safe_layer.utils.risk_policy import  analyze_risk
+from db_safe_layer.db.database import DatabaseManager
+from db_safe_layer.db.config import settings
 import sqlglot
 from sqlglot import exp
 
 def rewrite_to_count(sql: str) -> str:
     """
-    黑魔法函数：将任意 DML (Update/Delete/Insert) 转换为 SELECT COUNT(*)
+    Black magic function: Convert any DML (Update/Delete/Insert) to SELECT COUNT(*)
     """
     try:
         expression = sqlglot.parse_one(sql)
         
         # -------------------------------------------------------
-        # 1. 处理 SELECT / WITH / UNION (保持原有逻辑)
+        # 1. Process SELECT /WITH /UNION (maintain original logic)
         # -------------------------------------------------------
         if isinstance(expression, exp.Select) or isinstance(expression, exp.Union):
-            # 移除 ORDER BY (优化性能)
+            # Remove ORDER BY (optimize performance)
             if isinstance(expression, exp.Select):
                 expression.set("order", None)
             return sqlglot.select("COUNT(*) AS estimated_rows").from_(expression.subquery("t")).sql()
 
         # -------------------------------------------------------
-        # 2. 处理 DELETE 和 UPDATE
-        # 逻辑：提取表名 + 提取 WHERE 条件 -> 拼装成 SELECT COUNT(*)
+        # 2. Handle DELETE and UPDATE
+        # Logic: extract table name + extract WHERE condition -> assemble into SELECT COUNT(*)
         # -------------------------------------------------------
         if isinstance(expression, (exp.Delete, exp.Update)):
-            # 查找目标表
-            # 注意：sqlglot 的 Update/Delete 结构中，table 通常在 this 或 find(exp.Table) 中
+           # Find the target table
+            # Note: In the Update/Delete structure of sqlglot, table is usually in this or find(exp.Table)
             target_table = expression.find(exp.Table)
             if not target_table:
                 return None
             
-            # 查找 WHERE 子句
+            # Find WHERE clause
             where_clause = expression.args.get("where")
             
-            # 构建新查询
+            # Build new query
             count_query = sqlglot.select("COUNT(*) AS estimated_rows").from_(target_table)
             
-            # 如果有 WHERE 条件，加进去；如果没有，就是全表 COUNT
+            # If there is a WHERE condition, add it; if not, it is COUNT of the entire table
             if where_clause:
                 count_query = count_query.where(where_clause)
                 
             return count_query.sql()
 
         # -------------------------------------------------------
-        # 3. 处理 INSERT
+       # 3. Process INSERT
         # -------------------------------------------------------
         if isinstance(expression, exp.Insert):
-            # 情况 A: INSERT INTO ... VALUES (...)
-            # 这种不需要查库，直接算 values 里的元素个数
+            # Case A: INSERT INTO ... VALUES (...)
+            # This does not require checking the database, just count the number of elements in values directly
             if isinstance(expression.expression, exp.Values):
                 values_node = expression.expression
-                # 这是一个 Value list，直接返回 list 长度的 SQL (模拟)
-                # 或者直接在 Python 层算出来，这里为了统一返回 SQL 字符串
+                # This is a Value list, directly returns the SQL of the length of the list (simulation)
+                # Or calculate it directly at the Python layer. Here, in order to uniformly return SQL strings
                 row_count = len(values_node.expressions)
-                # 构造一个不需要查表的 SELECT 
+               # Construct a SELECT that does not require table lookup
                 return f"SELECT {row_count} AS estimated_rows"
 
-            # 情况 B: INSERT INTO ... SELECT ...
-            # 这种需要运行后面的 SELECT
+          # Case B: INSERT INTO ... SELECT ...
+            # This requires running the subsequent SELECT
             if isinstance(expression.this, exp.Select):
                 source_query = expression.this
                 return sqlglot.select("COUNT(*) AS estimated_rows").from_(source_query.subquery("t")).sql()
 
         # -------------------------------------------------------
-        # 4. 处理 TRUNCATE (DDL)
+        #4. Handling TRUNCATE (DDL)
         # -------------------------------------------------------
         # if isinstance(expression, exp.Truncate):
-        #      # Truncate 是清空全表，所以我们统计全表行数
+        #     # Truncate clears the entire table, so we count the number of rows in the entire table
         #      target_table = expression.this
         #      if target_table:
         #          return sqlglot.select("COUNT(*) AS estimated_rows").from_(target_table).sql()
 
     except Exception as e:
-        print(f"⚠️ Dry Run SQL 转换失败: {e}")
+        print(f"⚠️ Dry Run SQL conversion failed: {e}")
         return None
     
     return None
 
     
 def run_sql(sql: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    """真正执行 SQL (参数化安全版)"""
-    # ⚠️ 请确保这里替换为你实际的 DB 连接代码
+    """Real execution of SQL (parameterized security version)"""
+    # ⚠️ Please make sure to replace this with your actual DB connection code
     db = DatabaseManager(settings.DB_URL, echo=False)
     with db.session() as s:
-        # 使用参数化查询防止注入
+       # Use parameterized queries to prevent injection
         rs = s.execute(text(sql), params or {})
         
-        # 如果是 INSERT/UPDATE/DELETE，可能没有 returns，处理这种情况
+        # If it is INSERT/UPDATE/DELETE, there may be no returns, handle this situation
         if rs.returns_rows:
             cols = rs.keys()
             rows = rs.fetchall()
             return [dict(zip(cols, r)) for r in rows]
         else:
-            # 对于写操作，返回受影响行数作为结果
+            # For write operations, return the number of affected rows as the result
             return [{"affected_rows": rs.rowcount}]
         
 def run_dry_estimate(sql: str):
     """
-    智能估算行数 (支持 SELECT, UPDATE, DELETE, INSERT)
+    Intelligent estimation of row number (supports SELECT, UPDATE, DELETE, INSERT)
     """
-    # 1. 尝试将 SQL 转换为计数查询
+    # 1. Try to convert the SQL into a count query
     count_sql = rewrite_to_count(sql)
     
     if not count_sql:
-        # 如果无法转换（比如复杂的存储过程调用），返回 -1
+       # If conversion cannot be performed (such as complex stored procedure calls), return -1
         return -1, None
     
     print(f"   [DryRun] Generated Count SQL: {count_sql}")
     
-    # 2. 执行计数查询
+   # 2. Execute count query
     try:
-        # 特殊处理：如果是静态 INSERT VALUES，count_sql 可能是 "SELECT 5 AS estimated_rows"
-        # 这种不需要复杂的 from，直接 run_sql 也能跑（取决于数据库支持 SELECT without FROM，如 Postgres/SQLite 支持，Oracle 需要 FROM DUAL）
+       # Special handling: if it is static INSERT VALUES, count_sql may be "SELECT 5 AS estimated_rows"
+        # This does not require complicated from, and can be run directly with run_sql (depending on the database supporting SELECT without FROM, such as Postgres/SQLite support, Oracle requires FROM DUAL）
         
         result = run_sql(count_sql)
         if result and len(result) > 0:
-            # 兼容不同的 key 返回 (count, count(*), estimated_rows)
-            # 我们的 rewrite 函数都强制起了别名 AS estimated_rows
+           # Compatible with different keys and return (count, count(*), estimated_rows)
+            # Our rewrite function is forced to use the alias AS estimated_rows
             val = result[0].get("estimated_rows")
             if val is not None:
                 return int(val), count_sql
@@ -130,61 +131,61 @@ def run_dry_estimate(sql: str):
     
     return -1, count_sql
 def cli_user_confirmation(report: List) -> bool:
-    """用户确认函数，安全地访问报告数据"""
+    """User confirmation function to securely access report data"""
     print("\n" + "="*60)
-    print("⚠️  高风险操作警告")
+    print("⚠️  High risk operation warning")
     print("="*60)
     
-    # 安全地获取风险信息
+   # Securely obtain risk information
     risk_info = {}
     if len(report) > 0 and "outputs" in report[0]:
-        risk_info = report[0].get("outputs", {})
+        risk_info = report[2].get("outputs", {})
         sql_preview = report[0].get("inputs", {}).get("sql", "N/A")
-        print(f"SQL 语句: {sql_preview}")
-        print(f"风险级别: {risk_info.get('risk_level', 'UNKNOWN')}")
-        print(f"原因: {risk_info.get('reason', 'N/A')}")
-        print(f"操作类型: {risk_info.get('sql_type', 'UNKNOWN')}")
+        print(f"SQL statement: {sql_preview}")
+        print(f"Risk level: {risk_info.get('risk_level', 'UNKNOWN')}")
+        print(f"reason: {risk_info.get('reason', 'N/A')}")
+        print(f"Operation type: {risk_info.get('sql_type', 'UNKNOWN')}")
     
-    # 安全地获取预估行数
+   # Safely get the estimated number of rows
     estimated_rows = -1
     if len(report) > 1 and "outputs" in report[1]:
         estimated_rows = report[1].get("outputs", {}).get("estimated_rows", -1)
     
     if estimated_rows >= 0:
-        print(f"预估受影响行数: {estimated_rows}")
+        print(f"Estimated number of affected rows: {estimated_rows}")
     else:
-        print("预估受影响行数: 无法估算")
+        print("Estimated number of affected rows: Unable to estimate")
     
     print("="*60)
     
     while True:
-        choice = input("\n是否继续执行？(yes/no): ").strip().lower()
+        choice = input("\nContinue execution?(yes/no): ").strip().lower()
         if choice in ("yes", "y"):
             return True
         elif choice in ("no", "n"):
             return False
         else:
-            print("请输入 yes 或 no")
+            print("Please enter yes or no")
 
 
 def execute_sql_with_safety(raw_sql: str) -> Dict[str, Any]:
     """
-    新的安全执行流程：
+    New security enforcement process:
     ① risk_level = analyze_risk(sql, estimated_rows)
-    ② dry_run()：只 estimate affected rows，不执行
-    ③ 如果 risk = LOW → 直接执行 SQL
-    ④ 如果 risk = MEDIUM / HIGH → 打印提示 → 等待用户 yes/no
-    ⑤ 用户 yes → 创建 snapshot（自动事务或临时备份）
-    ⑥ 执行 SQL
-    ⑦ 写入 audit.json（由调用者处理）
-    ⑧ 提供 replay 功能（回滚或重放）
+    ② dry_run(): only estimate affected rows, not executed
+    ③ If risk = LOW → execute SQL directly
+    ④ If risk = MEDIUM /HIGH → Print prompt → Wait for user yes/no
+    ⑤ User yes → Create snapshot (automatic transaction or temporary backup)
+    ⑥Execute SQL
+    ⑦ Write audit.json (processed by the caller)
+    ⑧ Provide replay function (rollback or replay)
     
     Args:
-        sql: 要执行的 SQL 语句
-        auto_confirm: 是否自动确认（用于测试或脚本）
+        sql: SQL statement to be executed
+        auto_confirm: whether to confirm automatically (for testing or scripts)
     
     Returns:
-        包含执行结果、风险信息、快照ID等的字典
+        Dictionary containing execution results, risk information, snapshot ID, etc.
     """
     audit_steps = []
     snapshot_id = None
@@ -195,47 +196,41 @@ def execute_sql_with_safety(raw_sql: str) -> Dict[str, Any]:
     try:
         expression = sqlglot.parse_one(raw_sql)
     except Exception as e:
-        # 如果 SQL 解析失败，使用默认值
+        # If SQL parsing fails, use default value
         expression = None
         risk_info = {
             "risk_level": "UNKNOWN",
             "sql_type": "UNKNOWN",
-            "reason": f"SQL 解析失败: {str(e)}"
+            "reason": f"SQL Parsing failed: {str(e)}"
         }
         risk_level = "UNKNOWN"
 
-    # ① analyze_risk：分析风险等级
-    analyze_risk_record = {
+   # ① precheck: parse SQL type 
+    precheck_record = {
         "step_id": "step 1",
-        "action": "analyze_risk",
+        "action": "precheck",
         "start_at": datetime.datetime.utcnow().isoformat(),
         "inputs": {"sql": pretty(raw_sql)},
         "outputs": {},
         "status": "pending"
     }
-
     try:
         if expression:
-            risk_info = analyze_risk(expression)
-            risk_level = risk_info.get("risk_level", "UNKNOWN")
-        analyze_risk_record["outputs"] = risk_info
-        analyze_risk_record["status"] = "success"
+            sql_details = extract_sql_details(expression)
+            precheck_record["outputs"]["operation_type"] = sql_details.get("sql_type", "UNKNOWN")
+            precheck_record["outputs"]["tables"] = sql_details.get("tables", "UNKNOWN")
+            precheck_record["outputs"]["predicate"] = sql_details.get("where_clause", "UNKNOWN") 
+        precheck_record["status"] = "success"
     except Exception as e:
-        analyze_risk_record["status"] = "error"
-        analyze_risk_record["error"] = str(e)
-        # 设置默认值
-        if not risk_info:
-            risk_info = {
-                "risk_level": "UNKNOWN",
-                "sql_type": "UNKNOWN",
-                "reason": f"风险分析失败: {str(e)}"
-            }
-            risk_level = "UNKNOWN"
+        precheck_record["status"] = "error"
+        precheck_record["error"] = str(e)
+
     finally:
-        analyze_risk_record["end_at"] = datetime.datetime.utcnow().isoformat()
-        audit_steps.append(analyze_risk_record)
-    
-    # ② dry_run：估计受影响行数
+        precheck_record["end_at"] = datetime.datetime.utcnow().isoformat()
+        audit_steps.append(precheck_record)
+
+
+    # ② dry_run: estimate the number of affected rows and rewrite
     dry_run_record = {
         "step_id": "step 2",
         "action": "dry_run",
@@ -246,7 +241,6 @@ def execute_sql_with_safety(raw_sql: str) -> Dict[str, Any]:
     }
     try:
         estimated_rows, dry_run_sql = run_dry_estimate(raw_sql)
-        dry_run_record["outputs"]["tables"] = get_tables(raw_sql)
         dry_run_record["outputs"]["estimated_rows"] = estimated_rows
         dry_run_record["outputs"]["dry_run_sql"] = dry_run_sql
 
@@ -259,12 +253,69 @@ def execute_sql_with_safety(raw_sql: str) -> Dict[str, Any]:
         dry_run_record["end_at"] = datetime.datetime.utcnow().isoformat()
         audit_steps.append(dry_run_record)
     
+
+    # ③ analyze_risk :  low-, medium-, or high-risk.
+
+    analyze_risk_record = {
+        "step_id": "step 3",
+        "action": "analyze_risk",
+        "start_at": datetime.datetime.utcnow().isoformat(),
+        "inputs": {"sql": pretty(raw_sql), "estimated_rows": estimated_rows},
+        "outputs": {},
+        "status": "pending"
+    }
+
+    try:
+        if expression:
+            risk_info = analyze_risk(expression, estimated_rows)
+            risk_level = risk_info.get("risk_level", "UNKNOWN")
+        analyze_risk_record["outputs"] = risk_info
+        analyze_risk_record["status"] = "success"
+    except Exception as e:
+        analyze_risk_record["status"] = "error"
+        analyze_risk_record["error"] = str(e)
+       # Set default value
+        if not risk_info:
+            risk_info = {
+                "risk_level": "UNKNOWN",
+                "sql_type": "UNKNOWN",
+                "reason": f"Risk analysis failed: {str(e)}"
+            }
+            risk_level = "UNKNOWN"
+    finally:
+        analyze_risk_record["end_at"] = datetime.datetime.utcnow().isoformat()
+        audit_steps.append(analyze_risk_record)
     
-    # ③ 根据风险级别决定是否执行
+#    # ② dry_run: estimate the number of affected rows
+#     dry_run_record = {
+#         "step_id": "step 2",
+#         "action": "dry_run",
+#         "start_at": datetime.datetime.utcnow().isoformat(),
+#         "inputs": {"sql": pretty(raw_sql)},
+#         "outputs": {},
+#         "status": "pending"
+#     }
+#     try:
+#         estimated_rows, dry_run_sql = run_dry_estimate(raw_sql)
+#         dry_run_record["outputs"]["tables"] = get_tables(raw_sql)
+#         dry_run_record["outputs"]["estimated_rows"] = estimated_rows
+#         dry_run_record["outputs"]["dry_run_sql"] = dry_run_sql
+
+#         dry_run_record["status"] = "success"
+#     except Exception as e:
+#         dry_run_record["status"] = "error"
+#         dry_run_record["error"] = str(e)
+#         estimated_rows = -1
+#     finally:
+#         dry_run_record["end_at"] = datetime.datetime.utcnow().isoformat()
+#         audit_steps.append(dry_run_record)
+    
+    
+   # ③ Decide whether to execute based on the risk level
     if risk_level in ("LOW", "INFO"):
-        # LOW 和 INFO 风险直接执行
+       # LOW and INFO risks are executed directly
         execute_record = {
-            "step_id": "step 3",
+            "step_id": "step 4",
             "action": "execute_sql",
             "start_at": datetime.datetime.utcnow().isoformat(),
             "inputs": {"sql": pretty(raw_sql)},
@@ -276,35 +327,35 @@ def execute_sql_with_safety(raw_sql: str) -> Dict[str, Any]:
             execute_record["outputs"]["result"] = result
             execute_record["outputs"]["result_count"] = len(result) if result else 0
             execute_record["status"] = "success"
-            print(f"✅ SQL 执行成功")
+            print(f"✅ SQL execution successful")
         except Exception as e:
             execute_record["status"] = "error"
             execute_record["error"] = str(e)
-            print(f"❌ SQL 执行失败: {str(e)}")
+            print(f"❌ SQL execution failed: {str(e)}")
         finally:
             execute_record["end_at"] = datetime.datetime.utcnow().isoformat()
             audit_steps.append(execute_record)
     elif risk_level == "UNKNOWN" or risk_level == "unknown":
-        # 未知类型，拒绝执行
+        #Unknown type, execution refused
         execute_record = {
-            "step_id": "step 3",
+            "step_id": "step 4",
             "action": "execute_sql",
             "start_at": datetime.datetime.utcnow().isoformat(),
             "inputs": {"sql": pretty(raw_sql)},
             "outputs": {},
             "status": "error"
         }
-        execute_record["error"] = "无法识别的 SQL 类型，拒绝执行"
+        execute_record["error"] = "Unrecognized SQL type, execution refused"
         execute_record["end_at"] = datetime.datetime.utcnow().isoformat()
         audit_steps.append(execute_record)
-        print(f"❌ 无法识别的 SQL 类型，拒绝执行")
+        print(f"❌Unrecognized SQL type, execution refused")
     else:
-        # MEDIUM, HIGH, CRITICAL 需要用户确认
+       # MEDIUM, HIGH, CRITICAL require user confirmation
         user_confirmed = cli_user_confirmation(audit_steps)
 
         if not user_confirmed:
             confirmation_record = {
-                "step_id": "step 3",
+                "step_id": "step 4",
                 "action": "User_confirmation",
                 "start_at": datetime.datetime.utcnow().isoformat(),
                 "user_choice": "No",
@@ -312,10 +363,10 @@ def execute_sql_with_safety(raw_sql: str) -> Dict[str, Any]:
             }
             confirmation_record["end_at"] = datetime.datetime.utcnow().isoformat()
             audit_steps.append(confirmation_record)
-            print("❌ 用户取消执行")
+            print("❌ User cancels execution")
         else:
             confirmation_record = {
-                "step_id": "step 3",
+                "step_id": "step 4",
                 "action": "User_confirmation",
                 "start_at": datetime.datetime.utcnow().isoformat(),
                 "user_choice": "Yes",
@@ -325,7 +376,7 @@ def execute_sql_with_safety(raw_sql: str) -> Dict[str, Any]:
             audit_steps.append(confirmation_record)
 
             snapshot_record = {
-                "step_id": "step 4",
+                "step_id": "step 5",
                 "action": "create_snapshot",
                 "start_at": datetime.datetime.utcnow().isoformat(),
                 "inputs": {},
@@ -333,34 +384,34 @@ def execute_sql_with_safety(raw_sql: str) -> Dict[str, Any]:
                 "status": "pending"
             }
             try:
-                from poc.utils.snapshot_manager import create_snapshot_for_operation
+                from db_safe_layer.utils.snapshot_manager import create_snapshot_for_operation
                 sql_type = risk_info.get("sql_type", "UNKNOWN")
                 snapshot_meta = create_snapshot_for_operation(
                     operation_type=sql_type,
                     sql=raw_sql
                 )
-                # create_snapshot_for_operation 返回 snapshot_meta 字典
+                # create_snapshot_for_operation returns snapshot_meta dictionary
                 if isinstance(snapshot_meta, dict):
                     snapshot_id = snapshot_meta.get("snapshot_id")
                 else:
-                    # 如果返回的是字符串（旧版本兼容）
+                   # If the returned value is a string (compatible with older versions)
                     snapshot_id = snapshot_meta
                 snapshot_record["inputs"] = {"sql": raw_sql}
                 snapshot_record["outputs"] = {"snapshot_id": snapshot_id} if snapshot_id else {}
                 snapshot_record["status"] = "success"
                 if snapshot_id:
-                    print(f"✅ 已创建快照: {snapshot_id}")
+                    print(f"✅ Snapshot created: {snapshot_id}")
             except Exception as e:
                 snapshot_record["status"] = "error"
                 snapshot_record["error"] = str(e)
-                print(f"⚠️ 警告: 创建快照失败: {str(e)}")
+                print(f"⚠️ Warning: Failed to create snapshot: {str(e)}")
             finally:
                 snapshot_record["end_at"] = datetime.datetime.utcnow().isoformat()
                 audit_steps.append(snapshot_record)
         
 
             execute_record = {
-                "step_id": "step 5",
+                "step_id": "step 6",
                 "action": "execute_sql",
                 "start_at": datetime.datetime.utcnow().isoformat(),
                 "inputs": {"sql": pretty(raw_sql)},
@@ -371,17 +422,17 @@ def execute_sql_with_safety(raw_sql: str) -> Dict[str, Any]:
                 execute_record["outputs"]["result"] = result
                 execute_record["outputs"]["result_count"] = len(result) if result else 0
                 execute_record["status"] = "success"
-                print(f"✅ SQL 执行成功")
+                print(f"✅ SQL execution successful")
             except Exception as e:
                 execute_record["status"] = "error"
                 execute_record["error"] = str(e)
-                print(f"❌ SQL 执行失败: {str(e)}")
+                print(f"❌ SQL execution failed: {str(e)}")
             finally:
                 execute_record["end_at"] = datetime.datetime.utcnow().isoformat()
                 audit_steps.append(execute_record)
     
     # 生成总结
-    timestamp = datetime.datetime.utcnow().strftime("%Y年%m月%d日 %H:%M:%S")
+    timestamp = datetime.datetime.utcnow().strftime("%Y%m%d %H:%M:%S")
     operation_type = risk_info.get("sql_type", "UNKNOWN")
     
     if result:
@@ -389,16 +440,16 @@ def execute_sql_with_safety(raw_sql: str) -> Dict[str, Any]:
             first = result[0]
             if first:
                 n = list(first.values())[0] if first else len(result)
-                summary = f"{timestamp}，用户执行了{operation_type}操作，返回结果：{n}"
+                summary = f"{timestamp}，The user executed{operation_type}Operation, return result：{n}"
             else:
-                summary = f"{timestamp}，用户执行了{operation_type}操作，返回 {len(result)} 行"
+                summary = f"{timestamp}，The user performed the {operation_type} operation and returned {len(result)} rows"
         else:
-            summary = f"{timestamp}，用户执行了{operation_type}操作，无结果返回"
+            summary = f"{timestamp}，The user performed the {operation_type} operation and no results were returned."
     else:
-        summary = f"{timestamp}，用户执行了{operation_type}操作"
+        summary = f"{timestamp}，User performed {operation_type} operation"
     
     if snapshot_id:
-        summary += f"（快照ID: {snapshot_id}）"
+        summary += f"（Snapshot id: {snapshot_id}）"
     
     
     return {
@@ -413,7 +464,7 @@ def execute_sql_with_safety(raw_sql: str) -> Dict[str, Any]:
 
 if __name__ == "__main__":
     print("🚀 Starting SQL Safety Pipeline (LangGraph Framework) ...")
-    # 示例 SQL
+   
     sql = """
     INSERT INTO person (
     person_id,
@@ -438,5 +489,5 @@ if __name__ == "__main__":
         'p0003'
     );
     """
-    # 使用 LangGraph 框架（方案二）
+
     result = execute_sql_with_safety(sql)

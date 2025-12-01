@@ -1,19 +1,19 @@
 from .log_manager import load_run
-from poc.execution.executor import run_sql
-from poc.utils.sqlglot_utils import is_read_only
+from db_safe_layer.execution.executor import run_sql
+from db_safe_layer.utils.sqlglot_utils import is_read_only
 
 def replay(run_id: str):
     """
-    回放功能：重放之前的 SQL 执行
-    对于只读操作，可以安全重放
-    对于非只读操作，会被阻止
+    Replay Functionality: Replays a previous SQL execution.
+    Read-only operations can be safely replayed.
+    Non-read-only operations will be blocked.
     """
     run = load_run(run_id)
     sql = run.get("sql")
     steps = run.get("execution_dag", [])
     re_results = []
     
-    # 如果没有直接的 SQL，尝试从步骤中提取
+    # If no direct SQL is available, attempt to extract it from the steps.
     if not sql:
         for s in steps:
             if s.get("action") == "execute_sql":
@@ -23,7 +23,7 @@ def replay(run_id: str):
     if not sql:
         return {"run_id": run_id, "status": "error", "error": "No SQL found in run record"}
     
-    # 检查是否为只读操作
+    # Check if it is a read-only operation.
     if not is_read_only(sql):
         return {
             "run_id": run_id,
@@ -32,7 +32,7 @@ def replay(run_id: str):
             "sql": sql
         }
     
-    # 重放只读操作
+   # Replay the read-only operation.
     try:
         res = run_sql(sql)
         return {

@@ -1,49 +1,31 @@
 import os, json, datetime
 from dotenv import load_dotenv
-from poc.execution.executor import execute_sql_with_safety
-from poc.audit.log_manager import save_run
-from poc.audit.replay import replay
+from db_safe_layer.execution.executor import execute_sql_with_safety
+from db_safe_layer.audit.log_manager import save_run
+from db_safe_layer.audit.replay import replay
 
 
 load_dotenv()
 
-def run_pipeline(sql: str, use_graph: bool = True):
+def safe_exec(sql: str):
     """
-    新的流程：直接接受 SQL 输入（使用 LangGraph 框架）
-    ① dry_run()：只 estimate affected rows，不执行
-    ② risk_level = analyze_risk(sql, estimated_rows)
-    ③ 如果 risk = LOW → 直接执行 SQL
-    ④ 如果 risk = MEDIUM / HIGH → 打印提示 → 等待用户 yes/no
-    ⑤ 用户 yes → 创建 snapshot（自动事务或临时备份）
-    ⑥ 执行 SQL
-    ⑦ 写入 audit.json
-    ⑧ 提供 replay 功能（回滚或重放）
-    
-    Args:
-        sql: 要执行的 SQL 语句
-        use_graph: 是否使用 LangGraph 框架（默认 True，使用 LangGraph）
-    """
-    if use_graph:
-        # 使用 LangGraph 框架
-        from poc.graph.dag_builder import build_graph
-        graph = build_graph()
-        result_state = graph.invoke({"sql": sql, "auto_confirm": False})
+        New process: accept SQL input directly
+        ① dry_run(): only estimate affected rows, not executed
+        ② risk_level = analyze_risk(sql, estimated_rows)
+        ③ If risk = LOW → execute SQL directly
+        ④ If risk = MEDIUM /HIGH → Print prompt → Wait for user yes/no
+        ⑤ User yes → Create snapshot (automatic transaction or temporary backup)
+        ⑥Execute SQL
+        ⑦ Write audit.json
+        ⑧ Provide replay function (rollback or replay)
         
-        # 从状态中提取结果
-        result = {
-            "sql": sql,
-            "estimated_rows": result_state.get("estimated_rows", -1),
-            "risk": result_state.get("risk", {}),
-            "snapshot_id": result_state.get("snapshot_id"),
-            "result": result_state.get("result"),
-            "audit_steps": result_state.get("execution_dag", []),
-            "summary": result_state.get("summary", "")
-        }
-    else:
-        # 直接调用函数（默认方式，更简单）
-        result = execute_sql_with_safety(sql)
+        Args:
+            sql: SQL statement to be executed
+            use_graph: whether to use LangGraph framework (default True, use LangGraph)
+        """
+    result = execute_sql_with_safety(sql)
     
-    # 组织审计 JSON
+   #Organization audit JSON
     ts = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     run_id = f"RUN_{ts}"
     run_obj = {
@@ -60,6 +42,7 @@ def run_pipeline(sql: str, use_graph: bool = True):
             "db_url": os.getenv("DATABASE_URL", "")
         }
     }
+    print(run_obj)
     run_id, path = save_run(run_obj)
     print(f"✅ Run saved: {path}")
     print(f"🧾 Summary: {run_obj['summary']}")
@@ -67,7 +50,7 @@ def run_pipeline(sql: str, use_graph: bool = True):
 
 if __name__ == "__main__":
     print("🚀 Starting SQL Safety Pipeline (LangGraph Framework) ...")
-    # 示例 SQL
+    # SQL example
     sql = """
     INSERT INTO person (
     person_id,
@@ -93,7 +76,7 @@ if __name__ == "__main__":
     );
     """
     sql1 ="""
-    CREATE TABLE person_copy (
+    CREATE TABLE person_1 (
     person_id INT PRIMARY KEY,
     gender_concept_id INT,
     year_of_birth INT,
@@ -137,8 +120,7 @@ if __name__ == "__main__":
        DROP TABLE person;
     """
 
-    # 使用 LangGraph 框架（方案二）
-    run_id, run_obj = run_pipeline(sql9, use_graph=False)
+    run_id, run_obj = safe_exec(sql8)
     # Replay
     # print("🔁 Replay now...")
     # re = replay(run_id)
