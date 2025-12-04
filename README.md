@@ -141,33 +141,6 @@ db-safe-layer/
 - SQLGlot：SQL AST、dry-run（SELECT COUNT(*) FROM (...)
 - SQLAlchemy 
 
-## ✨ Features
-### 🧠 Intelligent risk analysis (Risk Analysis)
-
-Perform AST (Abstract Syntax Tree) analysis based on sqlglot instead of simple regular matching.<br>
-Accurately identify high-risk operations such as DROP and UPDATE/DELETE without WHERE conditions.<br>
-Automatic rating: LOW, MEDIUM, HIGH, CRITICAL.<br>
-
-### 🔮 Pre-execution deduction (Dry Run)
-
-Read operation: directly estimate the result set size.
-
-Write operation: Intelligent conversion of DELETE/UPDATE into SELECT COUNT(*), without modifying the data, informs the user how many rows of data will be affected.
-
-### 📸 Automatic Snapshot & Rollback
-
-Pre-emptive backup: Automatically create table-level snapshots for high-risk operations (supports SQLite file replication & PostgreSQL CREATE TABLE AS).
-
-One-click rollback: Provides Time Machine function to support data recovery to any historical snapshot point.
-
-Automatic adaptation: The code automatically detects the underlying database dialect and adapts to CASCADE (Postgres) or PRAGMA (SQLite).
-
-### 📝 Full link audit (Audit)
-
-Record the SQL, risk level, user decision, execution time and snapshot ID of each operation.
-
-Supports operation replay (Replay) to facilitate problem reproduction.
-
 
 ## 🚀Quick Start
 ### Installation
