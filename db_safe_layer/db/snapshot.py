@@ -67,7 +67,6 @@ def create_snapshot(snapshot_id: Optional[str] = None) -> Dict[str, Any]:
         with open(snapshot_path, "w", encoding="utf-8") as f:
             json.dump(snapshot_meta, f, ensure_ascii=False, indent=2, default=str)
         
-        print(f"✅ Snapshot created: {snapshot_id}")
         return snapshot_meta
         
     except Exception as e:
@@ -199,20 +198,16 @@ def list_snapshots() -> list:
     return sorted(snapshots, key=lambda x: x.get("timestamp", ""), reverse=True)
 
 if __name__ == "__main__":
-    print("🚀 test snapshot ...")
+    print("🚀 ROLLBACK ...")
     print("1 List all available snapshots ...")
     id = list_snapshots()
     print(id)
     print("""2 Roll back to the specified snapshot
     Note: This is a dangerous operation and requires confirmation
-    
     Args:
         snapshot_id: snapshot ID
-        confirm: Whether to confirm execution of rollback
-    
-    Returns:
-        Rollback result information.
           """)
     ans = input("\nSpecified snapshot id: ")
     if ans:
         result= rollback_to_snapshot(ans,True)
+        print(result)

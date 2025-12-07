@@ -286,29 +286,6 @@ def execute_sql_with_safety(raw_sql: str) -> Dict[str, Any]:
         analyze_risk_record["end_at"] = datetime.datetime.utcnow().isoformat()
         audit_steps.append(analyze_risk_record)
     
-#    # ② dry_run: estimate the number of affected rows
-#     dry_run_record = {
-#         "step_id": "step 2",
-#         "action": "dry_run",
-#         "start_at": datetime.datetime.utcnow().isoformat(),
-#         "inputs": {"sql": pretty(raw_sql)},
-#         "outputs": {},
-#         "status": "pending"
-#     }
-#     try:
-#         estimated_rows, dry_run_sql = run_dry_estimate(raw_sql)
-#         dry_run_record["outputs"]["tables"] = get_tables(raw_sql)
-#         dry_run_record["outputs"]["estimated_rows"] = estimated_rows
-#         dry_run_record["outputs"]["dry_run_sql"] = dry_run_sql
-
-#         dry_run_record["status"] = "success"
-#     except Exception as e:
-#         dry_run_record["status"] = "error"
-#         dry_run_record["error"] = str(e)
-#         estimated_rows = -1
-#     finally:
-#         dry_run_record["end_at"] = datetime.datetime.utcnow().isoformat()
-#         audit_steps.append(dry_run_record)
     
     
    # ③ Decide whether to execute based on the risk level
