@@ -1,5 +1,5 @@
 [project]
-name = "db_safe-layer"
+name = "db-safe-layer"
 version = "0.1.0"
 description = "A secure SQL execution engine with risk analysis and reversible snapshot support."
 readme = "README.md"
