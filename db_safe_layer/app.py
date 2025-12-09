@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from db_safe_layer.execution.executor import execute_sql_with_safety
 from db_safe_layer.audit.log_manager import save_run
 from db_safe_layer.audit.replay import replay
+import argparse
 
 
 load_dotenv()
@@ -42,14 +43,13 @@ def safe_exec(sql: str):
             "db_url": os.getenv("DATABASE_URL", "")
         }
     }
-    print(run_obj)
     run_id, path = save_run(run_obj)
     print(f"✅ Run saved: {path}")
     print(f"🧾 Summary: {run_obj['summary']}")
     return run_id, run_obj
 
 if __name__ == "__main__":
-    print("🚀 Starting SQL Safety Pipeline (LangGraph Framework) ...")
+    print("🚀 Starting SQL Safety Pipeline ...")
     # SQL example
     sql = """
     INSERT INTO person (
@@ -120,7 +120,14 @@ if __name__ == "__main__":
        DROP TABLE person;
     """
 
-    run_id, run_obj = safe_exec(sql8)
+    parser = argparse.ArgumentParser(description="Safe DB Layer – A secure SQL execution layer")
+
+    parser.add_argument("input_sql",type=str ,help="SQL input")
+
+
+    args = parser.parse_args()
+
+    run_id, run_obj = safe_exec(args.input_sql)
     # Replay
     # print("🔁 Replay now...")
     # re = replay(run_id)

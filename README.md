@@ -133,9 +133,7 @@ db-safe-layer/
 │
 └── requirements.txt
 ```
-### SQL → Precheck →  Dry-Run → Risk analyse  → Approval → Snapshot → Execution DAG → Audit + Replay  
-
-
+### SQL → Precheck →  Dry-Run → Risk analyse  → Approval → Snapshot → Execution DAG → Audit + Replay 
 
 ### Stack
 - SQLGlot：SQL AST、dry-run（SELECT COUNT(*) FROM (...)
@@ -161,18 +159,34 @@ pip install -r requirements.txt
 Configure
 Copy .env.example -> .env and configure the database connection:
 
+## Quick Start
+✅ Python API
+```
+python
 
-- Run examples
-You can modify the input sql in app.py (SQL1 --> SQL10)
-```
-python -m db_safe_layer.app
-```
-
-- Run replay
-```
-python -m db_safe_layer.db.snapshot
+from db_safe_ayer import safe_exec, rollback_to
+#module SQL check
+safe_exec(SQL)
+#module rollback to specified snapshot id
+rollback_to()
 ```
 
+✅ CLI 
+```
+bash
+#SQL check
+safe-layer <SQL>
+#rollback to specified snapshot id
+safe-db-rollback 
+```
+
+💬 Join the Discussion
+
+If you have any ideas, suggestions, or questions while using this project, feel free to open an Issue and share your thoughts!
+Whether it’s a feature request, bug report, improvement proposal, or general discussion, we truly welcome your participation.
+
+👉 Start the conversation here: [Issues](https://github.com/interact-space/database-safe-layer/issues)
+Your feedback helps make this project better — thank you for your support! 🙌
 
 
 
