@@ -140,15 +140,15 @@ db-safe-layer/
 - SQLAlchemy 
 
 
-### 🛠️Installation
+## 🚀Quick Start
+### Installation
 Clone project
 ```
 Bash
 
 git clone https://github.com/interact-space/database-safe-layer.git
 ```
-
-Create a virtual environment and install dependencies
+Install
 ```
 Bash
 
