@@ -43,6 +43,6 @@ dist/
 
 # pip install files
 # pyproject.toml
-safe_db_cli.py
-safe_db_rollback_cli.py
+# safe_db_cli.py
+# safe_db_rollback_cli.py
 readme_new.md
