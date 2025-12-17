@@ -1,115 +1,121 @@
 # DB Safe Layer
-## AI-generated SQL must pass through a Safe Execution Layer before execution.
-Database safety is no longer a human review task.<br>
-LLM agents, automation scripts, and internal tools can generate SQL—but **execution remains the real risk**.
 
-DB Safe Layer is a lightweight SQL firewall that intercepts every statement before it reaches your database and performs:<br>
-•	SQL structural analysis<br>
-•	Dry-run impact estimation<br>
-•	Risk classification<br>
-•	Optional snapshot creation<br>
-•	Gated execution<br>
-•	Full audit + deterministic replay<br>
+**A deterministic safety layer for untrusted SQL (LLMs, agents, tools).**
 
-Just drop it in front of your database—no infra changes.
+You don’t review SQL. You **own execution**.
 
-### “Like having a tireless DBA reviewing every command.”
+---
 
-## Why this is needed
+## What happens before SQL touches your database
 
-Teams across analytics, data engineering, healthcare, finance, and consulting report the same problem:<br>
-	•	LLMs sometimes generate hallucinated or destructive SQL<br>
-	•	Developers rely on manual review (slow + error-prone)<br>
-	•	Operations lack audit logs and replayability<br>
-	•	Even staging databases get damaged accidentally<br>
+### 1. Intercept destructive SQL
+_Untrusted SQL is parsed and dry-run **before execution**._
 
-DB Safe Layer provides a deterministic safety boundary before SQL touches any real data.
+![Risk interception](./db_safe_layer/docs/media/risk-interception.gif)
 
-### Execution Pipeline (Deterministic)
+---
 
-```text
-User SQL Input
-        │
-        ▼
-   precheck(sql)
-        │
-        ▼
-   dry_run(sql)
-        │
-        ▼
-  estimated_rows
-        │
-        ▼
-analyze_risk(sql, rows)
-        │
-        ├── LOW → execute(sql)
-        │
-        └── MEDIUM/HIGH → ask user yes/no
-                        │
-                        ├── no → abort
-                        │
-                        └── yes → snapshot() → execute(sql)
-                                        │
-                                        ▼
-                                write audit.json
-                                        │
-                                        ▼
-                                return result
+### 2. Gate high-risk operations with explicit approval
+_Large or dangerous writes are **blocked or gated**, not silently executed._
+
+![Gate approval](./db_safe_layer/docs/media/gate-approval.gif)
+
+---
+
+### 3. Record evidence and enable deterministic rollback
+_Every decision is logged. Approved writes can be **rolled back via snapshot reference**._
+
+![Audit and rollback](./db_safe_layer/docs/media/audit-rollback.gif)
+
+---
+
+### Example: what gets blocked
+
+```bash
+safe-layer "DELETE FROM users;"
+
+Risk: CRITICAL
+Decision: BLOCKED
+```
+> This is the default behavior. Full-table destructive SQL never executes silently.
+
+## Why this exists
+
+Automated SQL fails in predictable ways:
+
+- UPDATE / DELETE without WHERE  
+- Large destructive writes  
+- Schema changes in the wrong environment  
+- No reproducible audit or rollback  
+
+Execution — not generation — is the real risk.
+
+---
+
+## Quick Start
+### Installation
+Clone project
+```bash
+
+git clone https://github.com/interact-space/database-safe-layer.git
+cd database-safe-layer
+
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+pip install -r requirements.txt
+cp .env.example .env   # then edit database config
 
 ```
-Every step is recorded.<br> 
-Every run can be replayed deterministically.
 
+Python API
+```python
 
-### Features
+from db_safe_layer import safe_exec, rollback_to
 
-#### 1. Structural Risk Analysis
+SQL = "DELETE FROM visits WHERE visit_date < '2010-01-01';"
 
-Using SQLGlot AST parsing—not regex.<br>
-Detects:<br>
-	•	DROP / TRUNCATE / ALTER<br>
-	•	DELETE / UPDATE without WHERE<br>
-	•	Cross-table mutations<br>
-	•	Write operations on protected tables<br>
+# check SQL and execute only if allowed by policy
+result = safe_exec(SQL)
 
-Produces standardized risk levels: **LOW / MEDIUM / HIGH / CRITICAL**.
+# interactive rollback (lists snapshots and prompts for selection)
+rollback_to()
 
-#### 2. Dry-Run (Non-Destructive Impact Estimation)
-
-Before running a write query:
-```text
-DELETE → SELECT COUNT(*)
-UPDATE → SELECT COUNT(*)
-INSERT → SELECT COUNT(*) FROM VALUES(...)
 ```
-Allows users to see:
 
-##### “This will update 3,214 rows. Proceed?”
+CLI 
+```bash
 
-#### 3. Automatic Snapshot
+# check SQL and execute only if allowed
+safe-layer "DELETE FROM visits WHERE visit_date < '2010-01-01';"
 
-For high-risk operations, DB Safe Layer creates a snapshot:<br>
-	•	SQLite → file copy<br>
-	•	PostgreSQL → CREATE TABLE AS snapshot / txid<br>
+# interactive rollback
+safe-db-rollback
 
-Snapshots are references, and backups—fast and reversible.
+```
 
-#### 4. Full Audit + Replay
+The rollback command will:
 
-Every run logs:<br>
-	•	SQL<br>
-	•	Parsed AST<br>
-	•	Risk level<br>
-	•	Dry-run result<br>
-	•	Snapshot reference<br>
-	•	Execution decision<br>
-	•	Final result<br>
+1. List available snapshot IDs
+2. Prompt the user to select one
+3. Restore database state to the selected snapshot
 
-Replay re-executes only read-only steps, without touching the database.
+Rollback does **not** re-run the original SQL.
+The operation itself is also recorded in the audit log.
 
 
+High-risk operations (large writes, schema changes) will prompt for explicit approval before execution.
 
-Structure
+## Design notes
+
+- Execution decisions are deterministic and replayable
+- Audit logs are structured and machine-readable
+- Rollback restores state without re-running SQL
+
+See code for execution pipeline and audit schema.
+
+
+## Structure
 ```text
 
 db-safe-layer/
@@ -139,46 +145,9 @@ db-safe-layer/
 - SQLGlot：SQL AST、dry-run（SELECT COUNT(*) FROM (...)
 - SQLAlchemy 
 
+## License
+MIT
 
-## Quick Start
-### Installation
-Clone project
-```
-Bash
-
-git clone https://github.com/interact-space/database-safe-layer.git
-```
-Install
-```
-Bash
-
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-Configure
-Copy .env.example -> .env and configure the database connection:
-
-## Quick Start
-✅ Python API
-```
-python
-
-from db_safe_ayer import safe_exec, rollback_to
-#module SQL check
-safe_exec(SQL)
-#module rollback to specified snapshot id
-rollback_to()
-```
-
-✅ CLI 
-```
-bash
-#SQL check
-safe-layer <SQL>
-#rollback to specified snapshot id
-safe-db-rollback 
-```
 
 💬 Join the Discussion
 
@@ -188,7 +157,3 @@ Whether it’s a feature request, bug report, improvement proposal, or general d
 👉 Start the conversation here: [Issues](https://github.com/interact-space/database-safe-layer/issues)
 Your feedback helps make this project better — thank you for your support! 🙌
 
-
-
-
- 
