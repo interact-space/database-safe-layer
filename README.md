@@ -1,4 +1,4 @@
-# 🛡️ DB Safe Layer
+# DB Safe Layer
 ## AI-generated SQL must pass through a Safe Execution Layer before execution.
 Database safety is no longer a human review task.<br>
 LLM agents, automation scripts, and internal tools can generate SQL—but **execution remains the real risk**.
@@ -15,7 +15,7 @@ Just drop it in front of your database—no infra changes.
 
 ### “Like having a tireless DBA reviewing every command.”
 
-## 🚧 Why this is needed
+## Why this is needed
 
 Teams across analytics, data engineering, healthcare, finance, and consulting report the same problem:<br>
 	•	LLMs sometimes generate hallucinated or destructive SQL<br>
@@ -25,7 +25,7 @@ Teams across analytics, data engineering, healthcare, finance, and consulting re
 
 DB Safe Layer provides a deterministic safety boundary before SQL touches any real data.
 
-### 🔁 Execution Pipeline (Deterministic)
+### Execution Pipeline (Deterministic)
 
 ```text
 User SQL Input
@@ -61,9 +61,9 @@ Every step is recorded.<br>
 Every run can be replayed deterministically.
 
 
-### ✨ Features
+### Features
 
-#### 🧠 1. Structural Risk Analysis
+#### 1. Structural Risk Analysis
 
 Using SQLGlot AST parsing—not regex.<br>
 Detects:<br>
@@ -74,7 +74,7 @@ Detects:<br>
 
 Produces standardized risk levels: **LOW / MEDIUM / HIGH / CRITICAL**.
 
-#### 🔮 2. Dry-Run (Non-Destructive Impact Estimation)
+#### 2. Dry-Run (Non-Destructive Impact Estimation)
 
 Before running a write query:
 ```text
@@ -86,7 +86,7 @@ Allows users to see:
 
 ##### “This will update 3,214 rows. Proceed?”
 
-#### 📸 3. Automatic Snapshot
+#### 3. Automatic Snapshot
 
 For high-risk operations, DB Safe Layer creates a snapshot:<br>
 	•	SQLite → file copy<br>
@@ -94,7 +94,7 @@ For high-risk operations, DB Safe Layer creates a snapshot:<br>
 
 Snapshots are references, and backups—fast and reversible.
 
-#### 📝 4. Full Audit + Replay
+#### 4. Full Audit + Replay
 
 Every run logs:<br>
 	•	SQL<br>
@@ -109,7 +109,7 @@ Replay re-executes only read-only steps, without touching the database.
 
 
 
-📂 Structure
+Structure
 ```text
 
 db-safe-layer/
@@ -140,7 +140,7 @@ db-safe-layer/
 - SQLAlchemy 
 
 
-## 🚀Quick Start
+## Quick Start
 ### Installation
 Clone project
 ```
